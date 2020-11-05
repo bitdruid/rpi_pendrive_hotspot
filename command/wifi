@@ -1,0 +1,204 @@
+#!/bin/bash
+
+# This script will let you connect to existing APs by simple terminal-commands
+
+#function for handling connection
+connector() {
+	#$1 = network
+	#$2 = passphrase
+	#$3 = device
+	ip link set $3 up
+	systemctl stop wpa_supplicant@$3.service
+	store_credentials "$1" "$2" "$3"
+	systemctl start wpa_supplicant@$3.service
+	#ip r del default
+	if ! [[ $(systemctl status dhcpcd@$3 | grep -o "active (running)") ]]; then
+		systemctl start dhcpcd@$3
+	else
+		systemctl restart dhcpcd@$3
+	fi
+}
+
+disconnector() {
+	#$1 = device
+	systemctl stop wpa_supplicant@$1.service
+	rm /etc/wpa_supplicant/wpa_supplicant-$1.conf
+	sleep 2
+	ip a flush $1
+	ip r del default
+	if [[ $(systemctl status dhcpcd@$1 | grep -o "active (running)") ]]; then
+		systemctl stop dhcpcd@$1 
+	fi
+	echo ''
+	echo 'Network on device '$1 'successfully disconnected and dhcpcd-daemon stopped.'
+	echo ''
+	ip link set $1 down
+}
+
+device_checker() {
+	#$1 = device to check if its usable (type: managed AND without SSID)
+	if [[ -z $(iw $1 info | grep -o 'ssid') && $(iw $1 info | grep -o 'managed') ]]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+store_credentials() {
+	#$1 = network
+	#$2 = passphrase
+	#$3 = device
+	if [ ! -f /etc/wpa_supplicant/wpa_supplicant-$3.conf ]; then
+		cp /etc/wpa_supplicant/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant-$3.conf
+	fi	
+	( echo "" ; wpa_passphrase "$1" "$2" ) >> /etc/wpa_supplicant/wpa_supplicant-$3.conf
+	echo 'Network and credentials stored.'
+}
+
+#store all wifi-interfaces in an array
+n=0
+for j in $(iw dev | grep -o 'wlan[0-99]') ; do
+	wifi_devices[$n]=$j
+	let "n= $n + 1"
+	if [ ! -f /etc/wpa_supplicant/wpa_supplicant-$j.conf ]; then
+		cp /etc/wpa_supplicant/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant-$j.conf
+	fi
+done
+
+###						###
+### Settings start here ###
+###						###
+			
+if [[ $1 == '-device' ]]; then
+	echo ''
+	echo 'Available devices and state:'
+	for i in ${wifi_devices[@]}
+	do
+		#check connected devices and their network
+		if [[ $(iw $i info | grep -o 'ssid') ]]; then
+		echo $i '- not available' $(iw $i info | grep 'ssid')
+		#check if devices any AP-state
+		elif [[ $(iw $i info | grep -o 'AP') ]]; then
+		echo $i '- AP active'
+		else echo $i '- Available for connections'
+		fi
+	done
+	echo ''
+
+elif [[ $1 == '-scan' ]]; then
+	if  [[ -n $2 ]]; then
+		echo 'Using' $2 'for scan...'
+		ip link set $2 up
+		iw dev $2 scan | grep 'SSID:'
+		echo ''
+	else
+		#for i in ${wifi_devices[@]}
+		if [ "${#wifi_devices[@]}" == 0 ]; then
+			echo ''
+			echo 'No wifi-interfaces were found! Scan not possible. Check interfaces "iw dev" ?'
+			echo ''
+		else
+			echo ''
+			echo  'First available interface:' ${wifi_devices[0]} '- found networks:'
+			ip link set ${wifi_devices[0]} up 
+			iw dev ${wifi_devices[0]} scan | grep 'SSID:'
+			echo ''
+		fi
+	fi
+elif [[ $1 == '-connect' ]]; then
+# $2 = network to connect
+# $3 = passphrase
+# $4 = device
+	#check if all parameter are given
+	if [[ -z $2 || -z $3 ]]; then
+		echo ''
+		echo 'No ESSID or PASSPHRASE given. Aborting.'
+		echo ''
+	else
+		echo ''
+		echo 'Trying to connect...'
+		echo ''
+		#did user specify an interface?
+		if  [[ -z $4 ]]; then
+			for i in ${wifi_devices[@]}
+				do
+				n=0
+				#check if any interface is without ssid but managed (so usable)
+				if device_checker $i == "0" ; then
+					echo  'First free:' $i '- using for connection...'
+					connector "$2" "$3" "$i"
+					n=1
+					break
+				else
+					store_credentials "$2" "$3" "$i"
+					echo 'Device not available for connection: ' $i
+					echo 'Check interfaces and try again. Maybe hotspot active?'
+				fi
+			done
+			if (( $n >= "1" )) ; then
+				echo ''
+				echo 'Connection established.'
+				echo ''
+			elif (( $n == "0" )) ; then
+				echo ''
+				echo 'There is no free interface available. Check with -device.'
+				echo ''
+			fi
+		else
+			#check if specified interface is free
+			if device_checker $4 == "0"  ; then
+				connector "$2" "$3" "$4" 
+			else	
+				echo ''
+				echo 'Interface' $4 'is busy. Aborting... Please check.'
+				echo ''
+			fi
+		fi
+	fi
+elif [[ $1 == '-disconnect' ]]; then
+#2 = device to disconnect
+	if [[ -z $2 ]]; then
+		echo 'Please specifiy interface to be disconnected! Aborting...'
+	else 
+		disconnector $2
+	fi
+elif [[ $1 == '-known' ]]; then
+        if [[ $2 == '-remove' ]]; then
+                if [[ $3 == '-all' ]]; then
+                        echo ''
+                        echo 'Removing all known networks from /etc/wpa_supplicant/ ...'
+						echo ''
+                        sed -zi 's/network.*$//' /etc/wpa_supplicant/wpa_supplicant-*.conf
+                elif [[ -z $3 ]]; then
+                        echo ''
+                        echo 'Please give the SSID to remove or [-all] for full cleaning.'
+                        echo ''
+                else
+                        echo 'Removing ' $3 ' from known networks.'
+                fi
+        elif [[ -z $2 ]]; then
+                echo ''
+                echo 'List of known wifi-networks:'
+        fi
+elif [[ $1 == '-h' ]]; then
+echo ''
+echo '----- simple wifi scan & connect script v1.5 -----'
+echo ''
+echo 'Usage:'
+echo 'wifi [option] [device]'
+echo '[-device]	List all devices and state (free or AP).'
+echo '[-scan]       Scans for networks.'
+echo '[-connect]    Connect to network with param [network] [passphrase] [device]'
+echo '[-disconnect] Disconnect a device from network'
+echo '[-known]      List known wifi-networks and remove specified or all'
+echo '              [-remove] [ssid] or [-all]'
+echo ''
+echo 'ATTENTION: If any whitespaces in network or passphrase use " "!'
+echo ''
+echo 'If no device is given the first available will be used.'
+echo ''
+else
+echo ''
+echo 'use -h for help!'
+echo ''
+fi

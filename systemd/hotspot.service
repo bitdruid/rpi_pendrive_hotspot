@@ -1,0 +1,9 @@
+[Unit]
+Description=run hotspot on boot and check for known networks in range
+
+[Service]
+ExecStartPre=hotspot -auto
+ExecStart=hotspot -join
+
+[Install]
+WantedBy=multi-user.target

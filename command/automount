@@ -1,0 +1,149 @@
+#!/bin/bash
+
+mount_dir=/media/share
+user=root
+group=root
+
+# $1 = parameter -mount or -umount
+# $2 = special device (sda, sda1, sdb, ...)
+# This script will work with user-input but is primarily made for use with
+# a systemd.service that is calling the script with the attached or detached block-device
+# systemd will get the device by a udev-rule
+# beware: script will delete ALL empty folders in /media/share because this folder is
+# used as hot-plug folder only and should not be messy
+
+echo ''
+lsblk --output name,fstype,size,mountpoint | grep 'sd[a-z]'
+echo ''
+
+mounting() {
+	echo '-----' $1':'
+	if ! [ $(lsblk /dev/$1 --output name,fstype | grep -m 1 $1 | wc -w) -gt 1 ]; then #checks if a fstype is given to device
+		echo '----- device has no filesystem! nothing to mount:' $1
+	else
+		if ! [[ $(lsblk --output mountpoint | grep -o $1) == $1 ]]; then
+			echo '----- creating dir with 0777:' $mount_dir/$1
+			mkdir -p $mount_dir/$1
+			echo '----- mounting' $1
+			mount /dev/$1 $mount_dir/$1
+			systemctl restart smbd nmbd
+			chmod -R 0777 $mount_dir
+		else
+			mountpoint=$(lsblk --output name,mountpoint | grep $1)
+			echo '----- device' $1 'is already mounted at' $mountpoint
+		fi
+	fi
+	echo ''
+}
+
+unmounting() {
+	echo '-----' $1':'
+	if ! [ $(lsblk --output name,fstype | grep -m 1 $1 | wc -w) -gt 1 ]; then #checks if a fstype is given to device
+		echo '----- device has no filesystem! nothing to unmount:' $1
+	else
+		mountcheck=$(lsblk --output name,mountpoint | grep -m 1 $1 | wc -w) #check if mountpoint exist
+		if [[ $mountcheck -eq 1 ]]; then #no mountpoint
+			echo '----- device is not mounted:' $1
+		elif [[ $mountcheck > 1 ]]; then #mountpoint exists
+			echo '----- umounting and removing' $mount_dir'/'$1
+			umount $mount_dir/$1 > /dev/null
+			if [[ -d $mount_dir/$1 ]]; then rm -r $mount_dir/$1; fi
+		else
+			echo '----- ERROR: device busy or other problem. umount not possible:' $mount_dir'/'$1
+			echo '----- DO NOT REMOVE FOLDER' $mount_dir'/'$1 '!!!'
+		fi
+	fi
+	echo ''
+}
+
+emptyfoldercheck() {
+	if [[ -d $mount_dir/$1 ]]; then #if dir exists
+		echo '-----' $mount_dir'/'$1':'
+		umount $mount_dir/$1 > /dev/null
+		#if ! [[ $(ls -lA $mount_dir'/'$1 | grep -i '[a-z]\|[0-9]' | grep -v 'total 0') ]]; then #if any content in dir (counts files)
+		if [[ -n $(find $mount_dir'/'$1 -maxdepth 0 -empty) ]]; then #if any content in dir (dir returns only if empty)
+			echo '----- removing' $mount_dir'/'$1 'because empty dir'
+			rm -r $mount_dir/$1
+		else
+			echo '----- folder not empty. please check mountpoints and folder:' $mount_dir'/'$1
+			echo '----- CHECK BEFORE REMOVING FOLDER!!!'
+		fi
+		echo ''
+	fi
+}
+
+#Here are the arguments catched
+
+### main part: mounting ###
+if [[ $1 == '-mount' ]]; then
+	if [[ -n $2 ]]; then #check if a special device is given, else do for all devices
+		mounting $2
+	else
+		#check all attached block-devices and build array with them
+		mapfile -t block_device < <(lsblk --output name | grep -Eo "sd[a-z][1-999]|sd[a-z]")
+		for i in ${block_device[@]}
+		do
+			mounting $i
+		done
+	fi
+### main part: unmounting ###
+elif [[ $1 == '-umount' ]]; then
+	if [[ -n $2 ]]; then
+		unmounting $2
+		emptyfoldercheck $2
+	else
+		#check all mounted devices. this option will only be called by user and not by the systemd-service
+		#if you detach the device, the device is no longer listet in lsblk
+		#systemd will get every single detached device and remove the folders
+		mapfile -t block_device < <(lsblk --output name | grep -Eo "sd[a-z][1-999]|sd[a-z]")
+		if [[ ${#block_device[@]} != 0 ]]; then
+			for i in ${block_device[@]}
+			do
+				unmounting $i
+			done
+		fi
+		#if device was detached without unmounting array will be emtpy, so check for empty folders
+		mapfile -t empty_check < <(ls -lA $mount_dir | grep -Eo 'sd[a-z][1-999]|sd[a-z]')
+		if [[ ${#empty_check[@]} != 0 ]]; then
+			for i in ${empty_check[@]}
+			do
+				emptyfoldercheck $i
+			done
+		fi
+	fi
+elif [[ $1 == '-clean' ]]; then
+	if [[ -n $2 ]]; then
+		emptyfoldercheck $2
+	else
+		#check all share-folders. if no device is given (sdx)
+		#all empty share-folders will be deleted
+		#only for already detached devices
+		mapfile -t empty_check < <(ls -lA $mount_dir | grep -Eo 'sd[a-z][1-999]|sd[a-z]')
+		if [[ ${#empty_check[@]} != 0 ]]; then
+			for i in ${empty_check[@]}
+			do
+				if [[ -z $(lsblk -o NAME,MOUNTPOINT | grep -i $mount_dir'/'$i) ]]; then #| grep -Po '(?<!.)(sd[a-z][1-999]|sd[a-z])') ]]; then
+					emptyfoldercheck $i
+				fi
+			done
+		fi
+	fi
+	
+### secondary part: help and info ###
+elif [[ $1 == '-h' ]]; then
+	echo ''
+	echo 'Usage:'
+	echo 'automount [option] [block-device]'
+	echo ''
+	echo '[-mount]	mount all or the GIVEN unmounted devices/partitions (sdxy) in /media'
+	echo '[-umount]	umount ALL or the GIVEN sdxy devices and remove their /media folder'
+	echo '[-clean]	cleaning empty folders without mounted device'
+	echo ''
+	echo 'If no device is given then all existing devices will be handled.'
+	echo ''
+### secondary part: help and info ###
+else
+	echo ''
+	echo 'Use -h for information. This script will automount in /media and nothing else. Use it with udev rule.'
+	echo ''
+fi

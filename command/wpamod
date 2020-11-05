@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# simple script to deactivate wpa_supplicant complete (by renaming)
+
+path=/lib/systemd/system
+
+if [[ $1 == "-disable" ]]; then
+	if [[ -f "$path/wpa_supplicant.service" ]]; then
+		systemctl stop wpa_supplicant.service
+		systemctl disable wpa_supplicant.service
+		mv $path/wpa_supplicant.service $path/wpa_supplicant.service.bak
+	else
+		echo ''
+		echo "There is no wpa_supplicant.service, can't disable."
+		echo ''
+	fi
+elif [[ $1 == "-enable" ]]; then
+	if [[ -f "$path/wpa_supplicant.service.bak" ]]; then
+		mv $path/wpa_supplicant.service.bak $path/wpa_supplicant.service
+		systemctl enable wpa_supplicant.service
+		systemctl start wpa_supplicant.service
+	else
+		echo ''
+		echo "There is no wpa_supplicant.service.bak, can't enable."
+		echo ''
+	fi
+elif [[ $1 == "-h" ]]; then
+	echo ''
+	echo 'Miniscript for disable/enable wpa_supplicant.'
+	echo ''
+	echo '-disable	Disable wpa_supplicant and change'
+	echo '		wpa_supplicant.service to .bak'
+	echo '-enable		Change .bak to wpa_supplicant.service'
+	echo '		and enable wpa_supplicant'
+	echo ''
+else
+	echo ''
+	echo 'Use -h for help-'
+	echo ''
+fi
+
