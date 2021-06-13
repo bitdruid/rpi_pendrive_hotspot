@@ -1,11 +1,20 @@
 #!/bin/bash
 
+sudo wpamod -enable
+sudo systemctl disable hotspot.service
+sudo systemctl enable --now dhcpcd.service
+sudo systemctl enable --now dnsmasq.service
+sudo systemctl disable --now hostapd.service
+sudo systemctl disable wpa_supplicant@wlan0
+sudo systemctl disable tor
+
 #remove scripts
 sudo rm /usr/bin/hotspot
 sudo rm /usr/bin/wifi
 sudo rm /usr/bin/wpamod
 sudo rm /usr/bin/automount
 sudo rm /usr/bin/logclean
+sudo rm /usr/bin/tormod
 
 #configs, services and rules
 sudo rm /etc/systemd/system/hotspot.service
@@ -28,9 +37,4 @@ udevadm control --reload-rules && udevadm trigger
 #remove interface-specified wpa_supplicant.conf
 rm /etc/wpa_supplicant/wpa_supplicant-*.conf
 
-sudo wpamod -enable
-sudo systemctl disable hotspot.service
-sudo systemctl enable --now dhcpcd.service
-sudo systemctl enable --now dnsmasq.service
-sudo systemctl disable --now hostapd.service
-sudo systemctl disable wpa_supplicant@wlan0
+

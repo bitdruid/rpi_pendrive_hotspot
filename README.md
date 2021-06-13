@@ -7,7 +7,7 @@ The scripts are made for a simple wifi-connection and an easy way to get (samba)
 Wifi control is completly given to the scripts. Predictable network interface names are activated. Partial use is not possible. Or by modifying manually.
 
 ### disclaimer
-ONLY use this if you want to give complete network control to command-line. Network-managers will no longer work. Stored networks may be lost!!!
+ONLY use this if you want to give complete network control to command-line. Network-managers will no longer work. Stored networks may be lost
 
 Yes i know there are some security-vulnerabilities but as this scripts are for my very simple-private use and i prefered to make them *as-simple-as*. However if some parts of the code or the whole idea would be usefull for you let me know.
 
@@ -17,6 +17,7 @@ Yes i know there are some security-vulnerabilities but as this scripts are for m
 - dhcpcd
 - nmap
 - samba
+- tor
 
 ## install and uninstall
 run install_dependencies.sh and install.sh

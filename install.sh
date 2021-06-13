@@ -11,6 +11,7 @@ sudo cp command/wifi /usr/bin/wifi
 sudo cp command/wpamod /usr/bin/wpamod
 sudo cp command/automount /usr/bin/automount
 sudo cp command/logclean /usr/bin/logclean
+sudo cp command/tormod /usr/bin/tormod
 
 #add decision: will overwrite following files: proceed?
 #configs, services and rules
@@ -49,3 +50,6 @@ sudo systemctl enable hotspot.service
 sudo systemctl disable --now dhcpcd.service
 sudo systemctl disable --now dnsmasq.service
 sudo systemctl disable --now hostapd.service
+
+echo ''
+echo 'Reboot to get changes active. Search for the piHotspot to reconnect via SSH and configure.'

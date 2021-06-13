@@ -5,7 +5,7 @@
 installer()
 {
 	sudo apt-get update
-	sudo apt-get install samba hostapd dnsmasq nmap dhcpcd5
+	sudo apt-get install samba hostapd dnsmasq nmap dhcpcd5 tor
 }
 
 echo 'This will install:'
@@ -14,6 +14,7 @@ echo '-hostapd'
 echo '-dnsmasq'
 echo '-nmap'
 echo '-dhcpcd5'
+echo '-tor'
 echo ''
 read -p 'proceed? (y/n)' selection
 echo ''
